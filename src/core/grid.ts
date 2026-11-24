@@ -43,39 +43,77 @@ function scorePhase(profile: Float32Array, step: number, offset: number): number
   return count > 0 ? sum / count : 0;
 }
 
-// Autocorrelation finds the true repeating pixel period without biasing toward huge cells.
-function findBestPeriodAndOffset(profile: Float32Array, minStep = 2, maxStep = 32): { step: number; offset: number } {
+function computeNormalizedAutocorrelation(profile: Float32Array, maxLag: number): Float32Array {
   const len = profile.length;
-  const limit = Math.min(maxStep, Math.floor(len / 8));
-  if (limit < minStep) return { step: 1, offset: 0 };
-
   let mean = 0;
   for (let i = 1; i < len; i++) mean += profile[i];
   mean /= Math.max(1, len - 1);
 
   const centered = new Float32Array(len);
-  for (let i = 1; i < len; i++) centered[i] = profile[i] - mean;
+  let variance = 0;
+  for (let i = 1; i < len; i++) {
+    const v = profile[i] - mean;
+    centered[i] = v;
+    variance += v * v;
+  }
 
-  const ac = new Float32Array(limit + 1);
-  let maxAc = 0;
-  for (let lag = minStep; lag <= limit; lag++) {
+  const ac = new Float32Array(maxLag + 1);
+  if (variance <= 0) return ac;
+
+  for (let lag = 1; lag <= maxLag; lag++) {
     let sum = 0;
     const n = len - lag;
     for (let i = 1; i < n; i++) {
       sum += centered[i] * centered[i + lag];
     }
-    ac[lag] = sum / n;
-    if (ac[lag] > maxAc) maxAc = ac[lag];
+    ac[lag] = sum / variance;
+  }
+  return ac;
+}
+
+function findBestOffset(profile: Float32Array, step: number): { offset: number; score: number } {
+  let bestOffset = 0;
+  let bestScore = -1;
+  for (let offset = 0; offset < step; offset += 0.5) {
+    const s = scorePhase(profile, step, offset);
+    if (s > bestScore) {
+      bestScore = s;
+      bestOffset = offset;
+    }
+  }
+  return { offset: Math.round(bestOffset * 2) / 2, score: bestScore };
+}
+
+// Detects a single square pixel size from combined X+Y autocorrelation so aspect ratio is never distorted.
+export function detectGrid(imageData: ImageData): GridConfig {
+  const { data, width, height } = imageData;
+  const profileX = computeAxisProfile(data, width, height, 'x');
+  const profileY = computeAxisProfile(data, width, height, 'y');
+
+  const minStep = 2;
+  const limit = Math.min(32, Math.floor(Math.min(width, height) / 8));
+  if (limit < minStep) {
+    return { cellWidth: 1, cellHeight: 1, offsetX: 0, offsetY: 0 };
   }
 
-  // Pick the smallest strong local peak (fundamental period rather than 2x/3x harmonics)
+  const acX = computeNormalizedAutocorrelation(profileX, limit);
+  const acY = computeNormalizedAutocorrelation(profileY, limit);
+
+  const combined = new Float32Array(limit + 1);
+  let maxAc = 0;
+  for (let lag = minStep; lag <= limit; lag++) {
+    combined[lag] = acX[lag] + acY[lag];
+    if (combined[lag] > maxAc) maxAc = combined[lag];
+  }
+
+  // Pick the smallest strong local peak (fundamental square pixel period)
   let bestStep = 1;
-  if (maxAc > 0) {
-    const peakThreshold = maxAc * 0.55;
+  if (maxAc > 0.05) {
+    const threshold = maxAc * 0.55;
     for (let lag = minStep; lag <= limit; lag++) {
-      const prev = lag > minStep ? ac[lag - 1] : -Infinity;
-      const next = lag < limit ? ac[lag + 1] : -Infinity;
-      if (ac[lag] >= peakThreshold && ac[lag] >= prev && ac[lag] >= next) {
+      const prev = lag > minStep ? combined[lag - 1] : -Infinity;
+      const next = lag < limit ? combined[lag + 1] : -Infinity;
+      if (combined[lag] >= threshold && combined[lag] >= prev && combined[lag] >= next) {
         bestStep = lag;
         break;
       }
@@ -83,56 +121,37 @@ function findBestPeriodAndOffset(profile: Float32Array, minStep = 2, maxStep = 3
     if (bestStep === 1) {
       let bestVal = -Infinity;
       for (let lag = minStep; lag <= limit; lag++) {
-        if (ac[lag] > bestVal) {
-          bestVal = ac[lag];
+        if (combined[lag] > bestVal) {
+          bestVal = combined[lag];
           bestStep = lag;
         }
       }
     }
   }
 
-  // Find best phase offset for the detected fundamental period
-  let bestOffset = 0;
+  // Sub-pixel refinement of the shared square cell size using combined X+Y edge alignment
+  let bestOffsetX = 0;
+  let bestOffsetY = 0;
   let bestScore = -1;
-  for (let offset = 0; offset < bestStep; offset++) {
-    const s = scorePhase(profile, bestStep, offset);
-    if (s > bestScore) {
-      bestScore = s;
-      bestOffset = offset;
-    }
-  }
-
-  // Sub-pixel refinement around the fundamental period
   const coarseStep = bestStep;
-  const coarseOffset = bestOffset;
+
   for (let ds = -0.45; ds <= 0.451; ds += 0.05) {
-    const step = Math.max(minStep, Math.round((coarseStep + ds) * 20) / 20);
-    for (let doff = -1; doff <= 1.001; doff += 0.5) {
-      const offset = ((coarseOffset + doff) % step + step) % step;
-      const s = scorePhase(profile, step, offset);
-      if (s > bestScore) {
-        bestScore = s;
-        bestStep = step;
-        bestOffset = Math.round(offset * 2) / 2;
-      }
+    const step = Math.max(1, Math.round((coarseStep + ds) * 20) / 20);
+    const ox = findBestOffset(profileX, step);
+    const oy = findBestOffset(profileY, step);
+    const total = ox.score + oy.score;
+    if (total > bestScore) {
+      bestScore = total;
+      bestStep = step;
+      bestOffsetX = ox.offset;
+      bestOffsetY = oy.offset;
     }
   }
-
-  return { step: bestStep, offset: bestOffset };
-}
-
-export function detectGrid(imageData: ImageData): GridConfig {
-  const { data, width, height } = imageData;
-  const profileX = computeAxisProfile(data, width, height, 'x');
-  const profileY = computeAxisProfile(data, width, height, 'y');
-
-  const x = findBestPeriodAndOffset(profileX);
-  const y = findBestPeriodAndOffset(profileY);
 
   return {
-    cellWidth: x.step,
-    cellHeight: y.step,
-    offsetX: x.offset,
-    offsetY: y.offset,
+    cellWidth: bestStep,
+    cellHeight: bestStep,
+    offsetX: bestOffsetX,
+    offsetY: bestOffsetY,
   };
 }
