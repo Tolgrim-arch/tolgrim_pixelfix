@@ -13,10 +13,17 @@ export interface AlphaConfig {
   chromaTolerance: number; // 0..255
 }
 
+export interface CleanupConfig {
+  removeOrphans: boolean;
+  blackOutlines: boolean;
+  blackThreshold: number; // 0..120
+}
+
 export interface PipelineConfig {
   grid: GridConfig;
   samplingMode: SamplingMode;
   alpha: AlphaConfig;
+  cleanup: CleanupConfig;
   paletteSize: number; // 0 = disabled, otherwise 2..256
 }
 

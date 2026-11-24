@@ -121,7 +121,14 @@ select {
   z-index: 2;
 }
 
-.view-toggle, .zoom-controls {
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.view-toggle, .zoom-controls, .crop-controls {
   pointer-events: auto;
   display: flex;
   align-items: center;
@@ -131,6 +138,16 @@ select {
   border-radius: 8px;
   padding: 4px;
 }
+
+.crop-controls .icon-btn {
+  gap: 5px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.icon-btn.active { background: var(--accent); color: #fff; }
+.hidden { display: none !important; }
 
 .toggle-btn {
   background: transparent;
@@ -156,7 +173,8 @@ select {
   align-items: center;
 }
 
-.icon-btn:hover { background: var(--surface-2); }
+.icon-btn:hover:not(:disabled) { background: var(--surface-2); }
+.icon-btn.active:hover:not(:disabled) { background: var(--accent-hover); }
 #zoom-label { font-size: 12px; min-width: 44px; text-align: center; color: var(--muted); }
 
 .canvas-stage {
@@ -177,8 +195,17 @@ select {
   cursor: grab;
 }
 
-#preview-canvas.eyedropper { cursor: crosshair; }
-#preview-canvas:active:not(.eyedropper) { cursor: grabbing; }
+#overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#preview-canvas.eyedropper,
+#preview-canvas.cropping { cursor: crosshair; }
+#preview-canvas:active:not(.eyedropper):not(.cropping) { cursor: grabbing; }
 
 .empty-state {
   position: absolute;
@@ -229,6 +256,12 @@ select {
   color: var(--muted);
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .control-row {
   display: flex;
   flex-direction: column;
@@ -242,7 +275,44 @@ select {
 }
 
 .control-row label span { color: var(--accent); font-variant-numeric: tabular-nums; }
-input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-btn {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-btn:hover { background: #2c313d; border-color: var(--accent); }
+
+input[type="range"] {
+  flex: 1;
+  width: 100%;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
 
 .checkbox-row {
   display: flex;
