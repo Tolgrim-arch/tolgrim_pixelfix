@@ -194,13 +194,17 @@ export class Viewport {
         this.octx.lineWidth = 1;
         this.octx.beginPath();
 
-        for (let x = this.gridOverlay.offsetX; x <= this.imgWidth; x += cw) {
-          const px = Math.round(ox + x * sx) + 0.5;
+        for (let gx = 0; ; gx++) {
+          const x = this.gridOverlay.offsetX + gx * cw;
+          if (x > this.imgWidth + 0.001) break;
+          const px = ox + x * sx;
           this.octx.moveTo(px, oy);
           this.octx.lineTo(px, oy + dh);
         }
-        for (let y = this.gridOverlay.offsetY; y <= this.imgHeight; y += ch) {
-          const py = Math.round(oy + y * sy) + 0.5;
+        for (let gy = 0; ; gy++) {
+          const y = this.gridOverlay.offsetY + gy * ch;
+          if (y > this.imgHeight + 0.001) break;
+          const py = oy + y * sy;
           this.octx.moveTo(ox, py);
           this.octx.lineTo(ox + dw, py);
         }

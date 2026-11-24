@@ -126,7 +126,7 @@ document.querySelectorAll<HTMLButtonElement>('.step-btn').forEach((btn) => {
     const input = $<HTMLInputElement>(targetId);
     const min = Number(input.min);
     const max = Number(input.max);
-    const next = Math.max(min, Math.min(max, Number(input.value) + delta));
+    const next = Math.round(Math.max(min, Math.min(max, Number(input.value) + delta)) * 100) / 100;
     if (next !== Number(input.value)) {
       input.value = String(next);
       input.dispatchEvent(new Event('input'));
