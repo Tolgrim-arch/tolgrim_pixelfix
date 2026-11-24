@@ -1,4 +1,4 @@
-import { cropImageData } from './core/crop';
+import { cropImageData, detectContentBounds } from './core/crop';
 import { exportImageDataAsPng } from './core/exporter';
 import { detectGrid } from './core/grid';
 import { HistoryManager, type AppSnapshot } from './core/history';
@@ -327,9 +327,23 @@ $('zoom-fit').addEventListener('click', () => {
 
 // Crop controls
 const cropBtn = $<HTMLButtonElement>('crop-btn');
+const cropAutoBtn = $<HTMLButtonElement>('crop-auto-btn');
+const cropSnapBtn = $<HTMLButtonElement>('crop-snap-btn');
 const cropApplyBtn = $<HTMLButtonElement>('crop-apply-btn');
 const cropCancelBtn = $<HTMLButtonElement>('crop-cancel-btn');
 const cropResetBtn = $<HTMLButtonElement>('crop-reset-btn');
+let cropSnapToGrid = false;
+
+function applyCrop(): void {
+  const rect = viewport.getCropRect();
+  if (!sourceData || !rect) return;
+  sourceData = cropImageData(sourceData, rect);
+  config.grid = detectGrid(sourceData);
+  syncGridInputs();
+  cropResetBtn.classList.remove('hidden');
+  exitCropMode(true);
+  recordHistory();
+}
 
 cropBtn.addEventListener('click', () => {
   if (!sourceData) return;
@@ -345,27 +359,32 @@ cropBtn.addEventListener('click', () => {
   prevViewBeforeCrop = viewMode;
   cropActive = true;
   cropBtn.classList.add('active');
+  cropAutoBtn.classList.remove('hidden');
+  cropSnapBtn.classList.remove('hidden');
   cropApplyBtn.classList.remove('hidden');
   cropApplyBtn.disabled = true;
   cropCancelBtn.classList.remove('hidden');
 
   setViewMode('original');
+  viewport.setSnapToGrid(cropSnapToGrid);
   viewport.setCropMode(true, (rect) => {
     cropApplyBtn.disabled = !rect;
   });
 });
 
-cropApplyBtn.addEventListener('click', () => {
-  const rect = viewport.getCropRect();
-  if (!sourceData || !rect) return;
-  sourceData = cropImageData(sourceData, rect);
-  config.grid = detectGrid(sourceData);
-  syncGridInputs();
-  cropResetBtn.classList.remove('hidden');
-  exitCropMode(true);
-  recordHistory();
+cropAutoBtn.addEventListener('click', () => {
+  if (!sourceData || !cropActive) return;
+  const bounds = detectContentBounds(sourceData);
+  if (bounds) viewport.setCropRect(bounds);
 });
 
+cropSnapBtn.addEventListener('click', () => {
+  cropSnapToGrid = !cropSnapToGrid;
+  cropSnapBtn.classList.toggle('active', cropSnapToGrid);
+  viewport.setSnapToGrid(cropSnapToGrid);
+});
+
+cropApplyBtn.addEventListener('click', applyCrop);
 cropCancelBtn.addEventListener('click', () => exitCropMode(true));
 
 cropResetBtn.addEventListener('click', () => {
@@ -431,6 +450,19 @@ $('undo-btn').addEventListener('click', performUndo);
 $('redo-btn').addEventListener('click', performRedo);
 
 window.addEventListener('keydown', (e) => {
+  if (cropActive) {
+    if (e.key === 'Enter' && viewport.getCropRect()) {
+      e.preventDefault();
+      applyCrop();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      exitCropMode(true);
+      return;
+    }
+  }
+
   if (!(e.ctrlKey || e.metaKey)) return;
   const key = e.key.toLowerCase();
   if (key === 'z' && !e.shiftKey) {
