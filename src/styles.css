@@ -16,6 +16,7 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -194,6 +195,7 @@ select {
   justify-content: center;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
 
 #preview-canvas {
@@ -358,4 +360,65 @@ input[type="range"] {
   height: 16px;
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .brand {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .workspace {
+    flex-direction: column;
+  }
+
+  .viewport-area {
+    flex: 1 1 55%;
+    min-height: 220px;
+  }
+
+  .viewport-toolbar {
+    padding: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+    max-height: 44dvh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding: 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .step-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  input[type="range"] {
+    height: 28px;
+  }
 }

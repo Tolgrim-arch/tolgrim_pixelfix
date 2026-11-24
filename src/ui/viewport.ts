@@ -146,6 +146,10 @@ export class Viewport {
     return 'new';
   }
 
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private pinchStartDist = 0;
+  private pinchStartScale = 1;
+
   private bindEvents(): void {
     const stage = this.canvas.parentElement!;
 
@@ -169,9 +173,20 @@ export class Viewport {
       }
     });
 
-    stage.addEventListener('mousedown', (e) => {
+    stage.addEventListener('pointerdown', (e) => {
       if (this.canvas.classList.contains('eyedropper')) return;
       if (this.imgWidth === 0) return;
+
+      this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.activePointers.size === 2) {
+        // Two-finger pinch-to-zoom cancels single-finger drag/crop
+        this.isDragging = false;
+        this.activeHandle = null;
+        const pts = Array.from(this.activePointers.values());
+        this.pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        this.pinchStartScale = this.scale;
+        return;
+      }
 
       // Middle-click or Space+drag always pans, even in crop mode
       if (e.button === 1 || (this.cropMode && this.spacePressed)) {
@@ -204,7 +219,18 @@ export class Viewport {
       this.lastY = e.clientY;
     });
 
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener('pointermove', (e) => {
+      if (this.activePointers.has(e.pointerId)) {
+        this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      if (this.activePointers.size === 2 && this.pinchStartDist > 0) {
+        const pts = Array.from(this.activePointers.values());
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        this.setScale(this.pinchStartScale * (dist / this.pinchStartDist));
+        return;
+      }
+
       if (this.cropMode && !this.activeHandle && !this.isDragging && !this.spacePressed && this.imgWidth > 0) {
         const hover = this.hitTestHandle(e.clientX, e.clientY);
         stage.style.cursor = HANDLE_CURSORS[hover];
@@ -230,10 +256,17 @@ export class Viewport {
       this.applyTransform();
     });
 
-    window.addEventListener('mouseup', () => {
+    const endPointer = (e: PointerEvent) => {
+      this.activePointers.delete(e.pointerId);
+      if (this.activePointers.size < 2) {
+        this.pinchStartDist = 0;
+      }
       this.isDragging = false;
       this.activeHandle = null;
-    });
+    };
+
+    window.addEventListener('pointerup', endPointer);
+    window.addEventListener('pointercancel', endPointer);
 
     new ResizeObserver(() => this.drawOverlay()).observe(stage);
   }
