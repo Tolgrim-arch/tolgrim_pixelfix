@@ -1,6 +1,7 @@
 import { cropImageData } from './core/crop';
 import { exportImageDataAsPng } from './core/exporter';
 import { detectGrid } from './core/grid';
+import { HistoryManager, type AppSnapshot } from './core/history';
 import { processImage } from './core/pipeline';
 import type { PipelineConfig, RGBA, SamplingMode } from './core/types';
 import { Viewport } from './ui/viewport';
@@ -27,6 +28,8 @@ let syncCellSize = true;
 let eyedropperActive = false;
 let cropActive = false;
 
+const history = new HistoryManager(50);
+
 const config: PipelineConfig = {
   grid: { cellWidth: 8, cellHeight: 8, offsetX: 0, offsetY: 0 },
   samplingMode: 'dominant',
@@ -34,6 +37,57 @@ const config: PipelineConfig = {
   cleanup: { removeOrphans: false, blackOutlines: false, blackThreshold: 55 },
   paletteSize: 0,
 };
+
+function updateHistoryButtons(): void {
+  $<HTMLButtonElement>('undo-btn').disabled = !history.canUndo();
+  $<HTMLButtonElement>('redo-btn').disabled = !history.canRedo();
+}
+
+function recordHistory(): void {
+  if (!sourceData) return;
+  history.push({ config, sourceData });
+  updateHistoryButtons();
+}
+
+function syncAllInputs(): void {
+  syncGridInputs();
+  $<HTMLSelectElement>('sampling-mode').value = config.samplingMode;
+  $<HTMLInputElement>('alpha-threshold').value = String(config.alpha.threshold);
+  $('alpha-threshold-val').textContent = String(config.alpha.threshold);
+  $<HTMLInputElement>('chroma-tol').value = String(config.alpha.chromaTolerance);
+  $('chroma-tol-val').textContent = String(config.alpha.chromaTolerance);
+  $('chroma-swatch').style.backgroundColor = config.alpha.chromaKey
+    ? `rgb(${config.alpha.chromaKey.r}, ${config.alpha.chromaKey.g}, ${config.alpha.chromaKey.b})`
+    : 'transparent';
+  $<HTMLInputElement>('remove-orphans').checked = config.cleanup.removeOrphans;
+  $<HTMLInputElement>('black-outlines').checked = config.cleanup.blackOutlines;
+  $<HTMLInputElement>('black-threshold').value = String(config.cleanup.blackThreshold);
+  $('black-threshold-val').textContent = String(config.cleanup.blackThreshold);
+  $<HTMLInputElement>('palette-size').value = String(config.paletteSize);
+  $('palette-size-val').textContent = config.paletteSize === 0 ? 'Sin límite' : String(config.paletteSize);
+}
+
+function applySnapshot(snap: AppSnapshot): void {
+  const prevSource = sourceData;
+  sourceData = snap.sourceData;
+  Object.assign(config.grid, snap.config.grid);
+  config.samplingMode = snap.config.samplingMode;
+  config.alpha.threshold = snap.config.alpha.threshold;
+  config.alpha.chromaKey = snap.config.alpha.chromaKey;
+  config.alpha.chromaTolerance = snap.config.alpha.chromaTolerance;
+  Object.assign(config.cleanup, snap.config.cleanup);
+  config.paletteSize = snap.config.paletteSize;
+
+  $('crop-reset-btn').classList.toggle('hidden', sourceData === originalSourceData);
+  syncAllInputs();
+  updateHistoryButtons();
+  renderCurrent();
+
+  if (prevSource !== sourceData && sourceData) {
+    const active = viewMode === 'fixed' && processedData ? processedData : sourceData;
+    viewport.fitToStage(active.width, active.height);
+  }
+}
 
 function renderCurrent(): void {
   if (!sourceData) return;
@@ -89,6 +143,7 @@ function bindRange(
     onChange(val);
     renderCurrent();
   });
+  input.addEventListener('change', () => recordHistory());
   return input;
 }
 
@@ -130,6 +185,7 @@ document.querySelectorAll<HTMLButtonElement>('.step-btn').forEach((btn) => {
     if (next !== Number(input.value)) {
       input.value = String(next);
       input.dispatchEvent(new Event('input'));
+      recordHistory();
     }
   });
 });
@@ -142,6 +198,7 @@ syncCellBtn.addEventListener('click', () => {
     config.grid.cellHeight = config.grid.cellWidth;
     syncGridInputs();
     renderCurrent();
+    recordHistory();
   }
 });
 
@@ -202,6 +259,8 @@ function loadImageFile(file: File): void {
     $<HTMLButtonElement>('crop-btn').disabled = false;
 
     renderCurrent();
+    history.reset({ config, sourceData });
+    updateHistoryButtons();
     const active = viewMode === 'fixed' && processedData ? processedData : sourceData;
     viewport.fitToStage(active.width, active.height);
   };
@@ -226,11 +285,13 @@ $('auto-grid-btn').addEventListener('click', () => {
   config.grid = detectGrid(sourceData);
   syncGridInputs();
   renderCurrent();
+  recordHistory();
 });
 
 $<HTMLSelectElement>('sampling-mode').addEventListener('change', (e) => {
   config.samplingMode = (e.target as HTMLSelectElement).value as SamplingMode;
   renderCurrent();
+  recordHistory();
 });
 
 $<HTMLInputElement>('show-grid').addEventListener('change', (e) => {
@@ -241,11 +302,13 @@ $<HTMLInputElement>('show-grid').addEventListener('change', (e) => {
 $<HTMLInputElement>('remove-orphans').addEventListener('change', (e) => {
   config.cleanup.removeOrphans = (e.target as HTMLInputElement).checked;
   renderCurrent();
+  recordHistory();
 });
 
 $<HTMLInputElement>('black-outlines').addEventListener('change', (e) => {
   config.cleanup.blackOutlines = (e.target as HTMLInputElement).checked;
   renderCurrent();
+  recordHistory();
 });
 
 document.querySelectorAll<HTMLButtonElement>('.toggle-btn').forEach((btn) => {
@@ -300,6 +363,7 @@ cropApplyBtn.addEventListener('click', () => {
   syncGridInputs();
   cropResetBtn.classList.remove('hidden');
   exitCropMode(true);
+  recordHistory();
 });
 
 cropCancelBtn.addEventListener('click', () => exitCropMode(true));
@@ -312,6 +376,7 @@ cropResetBtn.addEventListener('click', () => {
   syncGridInputs();
   cropResetBtn.classList.add('hidden');
   renderCurrent();
+  recordHistory();
   const active = viewMode === 'fixed' && processedData ? processedData : sourceData;
   if (active) viewport.fitToStage(active.width, active.height);
 });
@@ -342,12 +407,39 @@ canvas.addEventListener('click', (e) => {
   eyedropperBtn.classList.remove('active');
   canvas.classList.remove('eyedropper');
   renderCurrent();
+  recordHistory();
 });
 
 $('clear-chroma-btn').addEventListener('click', () => {
   config.alpha.chromaKey = null;
   $('chroma-swatch').style.backgroundColor = 'transparent';
   renderCurrent();
+  recordHistory();
+});
+
+function performUndo(): void {
+  const snap = history.undo();
+  if (snap) applySnapshot(snap);
+}
+
+function performRedo(): void {
+  const snap = history.redo();
+  if (snap) applySnapshot(snap);
+}
+
+$('undo-btn').addEventListener('click', performUndo);
+$('redo-btn').addEventListener('click', performRedo);
+
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    performUndo();
+  } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+    e.preventDefault();
+    performRedo();
+  }
 });
 
 $('export-btn').addEventListener('click', () => {
