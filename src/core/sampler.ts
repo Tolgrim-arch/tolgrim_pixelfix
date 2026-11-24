@@ -99,8 +99,8 @@ function sampleMedian(
 export function resampleGrid(source: ImageData, grid: GridConfig, mode: SamplingMode): ImageData {
   const cw = Math.max(1, grid.cellWidth);
   const ch = Math.max(1, grid.cellHeight);
-  const ox = Math.max(0, grid.offsetX);
-  const oy = Math.max(0, grid.offsetY);
+  const ox = ((grid.offsetX % cw) + cw) % cw;
+  const oy = ((grid.offsetY % ch) + ch) % ch;
 
   const outW = Math.max(1, Math.floor((source.width - ox) / cw));
   const outH = Math.max(1, Math.floor((source.height - oy) / ch));
